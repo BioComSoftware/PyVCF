@@ -1,3 +1,4 @@
+import ast
 import codecs
 import collections
 import csv
@@ -22,8 +23,8 @@ try:
 except ImportError:
     cparse = None
 
-from model import _Call, _Record, make_calldata_tuple
-from model import _Substitution, _Breakend, _SingleBreakend, _SV
+from .model import _Call, _Record, make_calldata_tuple
+from .model import _Substitution, _Breakend, _SingleBreakend, _SV
 
 
 # Metadata parsers/constants
@@ -315,6 +316,7 @@ class Reader(object):
         parser = _vcf_metadata_parser()
 
         line = next(self.reader)
+        
         while line.startswith('##'):
             self._header_lines.append(line)
 
@@ -350,7 +352,8 @@ class Reader(object):
             line = next(self.reader)
 
         fields = self._row_pattern.split(line[1:])
-        self._column_headers = fields[:9]
+#        self._column_headers = fields[:9]
+        self._column_headers = fields                    
         self.samples = fields[9:]
         self._sample_indexes = dict([(x,i) for (i,x) in enumerate(self.samples)])
 
@@ -468,7 +471,7 @@ class Reader(object):
 
         nfields = len(samp_fmt._fields)
 
-        for name, sample in itertools.izip(self.samples, samples):
+        for name, sample in zip(self.samples, samples):
 
             # parse the data for this sample
             sampdat = [None] * nfields
@@ -548,47 +551,95 @@ class Reader(object):
         else:
             return _Substitution(str)
 
-    def next(self):
+    def __next__(self):
         '''Return the next record in the file.'''
         line = next(self.reader)
-        row = self._row_pattern.split(line.rstrip())
-        chrom = row[0]
+        row = self._row_pattern.split(line.rstrip())        
+        rowdict = collections.OrderedDict((zip(self._column_headers, row)))
+        
         if self._prepend_chr:
-            chrom = 'chr' + chrom
-        pos = int(row[1])
+            rowdict["CHROM"] = 'chr' + rowdict["CHROM"]
+#===============================================================================
+#         chrom = rowdict["CHROM"]
+#         if self._prepend_chr:
+#             chrom = 'chr' + chrom
+# #        chrom = row[0]
+#===============================================================================
 
-        if row[2] != '.':
-            ID = row[2]
-        else:
-            ID = None
+#===============================================================================
+#         pos = int(rowdict["POS"])
+# #        pos = int(row[1])
+#===============================================================================
 
-        ref = row[3]
-        alt = self._map(self._parse_alt, row[4].split(','))
+        rowdict["ID"] = rowdict["ID"] if rowdict["ID"] != '.' else None
+        #=======================================================================
+        # if row[2] != '.':
+        #     ID = row[2]
+        # else:
+        #     ID = None
+        #=======================================================================
+
+        #=======================================================================
+        # ref = rowdict["REF"]
+        # alt = self._map(self._parse_alt, rowdict["ALT"].split(','))
+        #=======================================================================
+        rowdict["ALT"] = self._map(self._parse_alt, rowdict["ALT"].split(','))
+        
+        try: 
+            rowdict["QUAL"] = ast.literal_eval(rowdict["QUAL"])
+        except: # Any error means qual = None 
+              rowdict["QUAL"] = None
+        #=======================================================================
+        # try:
+        #     qual = int(row[5])
+        # except ValueError:
+        #     try:
+        #         qual = float(row[5])
+        #     except ValueError:
+        #         qual = None
+        #=======================================================================
+
+        rowdict["FILTER"] = self._parse_filter(rowdict["FILTER"])
+        rowdict["INFO"]   = self._parse_info(rowdict["INFO"])
+        #=======================================================================
+        # filt = self._parse_filter(rowdict["FILTER"])
+        # info = self._parse_info(rowdict["INFO"])
+        #=======================================================================
 
         try:
-            qual = int(row[5])
-        except ValueError:
-            try:
-                qual = float(row[5])
-            except ValueError:
-                qual = None
+            if rowdict["FORMAT"] == '.': 
+                rowdict["FORMAT"] = None
+        except KeyError:
+            rowdict["FORMAT"] = None
+        #=======================================================================
+        # try:
+        #     fmt = row[8]
+        # except IndexError:
+        #     fmt = None
+        # else:
+        #     if fmt == '.':
+        #         fmt = None
+        #=======================================================================
 
-        filt = self._parse_filter(row[6])
-        info = self._parse_info(row[7])
+        #=======================================================================
+        # record = _Record(chrom, pos, ID, ref, alt, qual, filt,
+        #                  info, fmt, self._sample_indexes)
+        #=======================================================================
 
-        try:
-            fmt = row[8]
-        except IndexError:
-            fmt = None
-        else:
-            if fmt == '.':
-                fmt = None
-
-        record = _Record(chrom, pos, ID, ref, alt, qual, filt,
-                info, fmt, self._sample_indexes)
-
-        if fmt is not None:
-            samples = self._parse_samples(row[9:], fmt, record)
+        record = _Record(rowdict, self._sample_indexes)
+            
+        # Genotype fields can be followed by other data columns, 
+        # so we have to detect that
+        if rowdict["FORMAT"] is not None:
+            items = list(rowdict.items())
+            #===================================================================
+            # We will assume that the next string that follows the FORMAT 
+            # declaration is the sample data. HOWEVER, a FORMAT can have 
+            # multiple sample lines (I.e. TUMOR and CONTROL.) This will only set 
+            # the first sample data. The class "_Record" needs to be 
+            # modified in order to handle multiple sets of sample data
+            #===================================================================
+            samples = self._parse_samples(items[9][1], rowdict["FORMAT"], record)
             record.samples = samples
 
         return record
@@ -641,7 +692,7 @@ class Writer(object):
     """VCF Writer. On Windows Python 2, open stream with 'wb'."""
 
     # Reverse keys and values in header field count dictionary
-    counts = dict((v,k) for k,v in field_counts.iteritems())
+    counts = dict((v,k) for k,v in field_counts.items())
 
     def __init__(self, stream, template, lineterminator="\n"):
         self.writer = csv.writer(stream, delimiter="\t",
@@ -654,30 +705,30 @@ class Writer(object):
         # get a maximum key).
         self.info_order = collections.defaultdict(
             lambda: len(template.infos),
-            dict(zip(template.infos.iterkeys(), itertools.count())))
+            dict(list(zip(iter(template.infos.keys()), itertools.count()))))
 
         two = '##{key}=<ID={0},Description="{1}">\n'
         four = '##{key}=<ID={0},Number={num},Type={2},Description="{3}">\n'
         _num = self._fix_field_count
-        for (key, vals) in template.metadata.iteritems():
+        for (key, vals) in template.metadata.items():
             if key in SINGULAR_METADATA:
                 vals = [vals]
             for val in vals:
                 if isinstance(val, dict):
                     values = ','.join('{0}={1}'.format(key, value)
-                                      for key, value in val.items())
+                                      for key, value in list(val.items()))
                     stream.write('##{0}=<{1}>\n'.format(key, values))
                 else:
                     stream.write('##{0}={1}\n'.format(key, val))
-        for line in template.infos.itervalues():
+        for line in template.infos.values():
             stream.write(four.format(key="INFO", *line, num=_num(line.num)))
-        for line in template.formats.itervalues():
+        for line in template.formats.values():
             stream.write(four.format(key="FORMAT", *line, num=_num(line.num)))
-        for line in template.filters.itervalues():
+        for line in template.filters.values():
             stream.write(two.format(key="FILTER", *line))
-        for line in template.alts.itervalues():
+        for line in template.alts.values():
             stream.write(two.format(key="ALT", *line))
-        for line in template.contigs.itervalues():
+        for line in template.contigs.values():
             if line.length:
                 stream.write('##contig=<ID={0},length={1}>\n'.format(*line))
             else:

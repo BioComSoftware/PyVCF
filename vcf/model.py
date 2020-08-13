@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+import ast
 import collections
 import sys
 import re
@@ -172,18 +173,41 @@ class _Record(object):
             Neither the upstream nor downstream flanking bases are
             included in the region.
     """
-    def __init__(self, CHROM, POS, ID, REF, ALT, QUAL, FILTER, INFO, FORMAT,
-            sample_indexes, samples=None):
-        self.CHROM = CHROM
-        #: the one-based coordinate of the first nucleotide in ``REF``
-        self.POS = POS
-        self.ID = ID
-        self.REF = REF
-        self.ALT = ALT
-        self.QUAL = QUAL
-        self.FILTER = FILTER
-        self.INFO = INFO
-        self.FORMAT = FORMAT
+    def __init__(self, ROWDICT,
+                 #CHROM, POS, ID, REF, ALT, QUAL, FILTER, INFO, FORMAT,
+                    sample_indexes, samples=None):
+
+        for varname, value in ROWDICT.items():
+            # "." pretty always means no value (NOne)
+            if value == ".": 
+                value = None
+                
+            else: 
+                try: 
+                    # Convert to either int or float
+                    # WIll error if value is not a string or a number
+                    value = ast.literal_eval(value)
+                except Exception as e: 
+                    # Any error means value is a string, so just leave it
+                    # Silence this error, or print it for debugging
+                    pass
+                    #print("ERROR occurred converting value '{}' with AST!({})".format(value, e))
+
+            setattr(self, varname, value) #equivalent to: self.varname= 'something'
+
+        #=======================================================================
+        # self.CHROM = CHROM
+        # #: the one-based coordinate of the first nucleotide in ``REF``
+        # self.POS = POS
+        # self.ID = ID
+        # self.REF = REF
+        # self.ALT = ALT
+        # self.QUAL = QUAL
+        # self.FILTER = FILTER
+        # self.INFO = INFO
+        # self.FORMAT = FORMAT
+        #=======================================================================
+        
         #: zero-based, half-open start coordinate of ``REF``
         self.start = self.POS - 1
         #: zero-based, half-open end coordinate of ``REF``
@@ -362,7 +386,7 @@ class _Record(object):
         If there are i alleles with frequency p_i, H=1-sum_i(p_i^2)
         """
         allele_freqs = [1-sum(self.aaf)] + self.aaf
-        return 1 - sum(map(lambda x: x**2, allele_freqs))
+        return 1 - sum([x**2 for x in allele_freqs])
 
     def get_hom_refs(self):
         """ The list of hom ref genotypes"""
@@ -558,9 +582,8 @@ class _Record(object):
             return True
 
 
-class _AltRecord(object):
+class _AltRecord(object, metaclass=ABCMeta):
     '''An alternative allele record: either replacement string, SV placeholder, or breakend'''
-    __metaclass__ = ABCMeta
 
     def __init__(self, type, **kwargs):
         super(_AltRecord, self).__init__(**kwargs)
@@ -596,7 +619,7 @@ class _Substitution(_AltRecord):
         return len(self.sequence)
 
     def __eq__(self, other):
-        if isinstance(other, basestring):
+        if isinstance(other, str):
             return self.sequence == other
         elif not isinstance(other, self.__class__):
             return False
