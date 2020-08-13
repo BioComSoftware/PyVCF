@@ -195,19 +195,6 @@ class _Record(object):
 
             setattr(self, varname, value) #equivalent to: self.varname= 'something'
 
-        #=======================================================================
-        # self.CHROM = CHROM
-        # #: the one-based coordinate of the first nucleotide in ``REF``
-        # self.POS = POS
-        # self.ID = ID
-        # self.REF = REF
-        # self.ALT = ALT
-        # self.QUAL = QUAL
-        # self.FILTER = FILTER
-        # self.INFO = INFO
-        # self.FORMAT = FORMAT
-        #=======================================================================
-        
         #: zero-based, half-open start coordinate of ``REF``
         self.start = self.POS - 1
         #: zero-based, half-open end coordinate of ``REF``
@@ -294,8 +281,20 @@ class _Record(object):
         return iter(self.samples)
 
     def __str__(self):
-        return "Record(CHROM=%(CHROM)s, POS=%(POS)s, REF=%(REF)s, ALT=%(ALT)s)" % self.__dict__
-
+#        return "Record(CHROM=%(CHROM)s, POS=%(POS)s, REF=%(REF)s, ALT=%(ALT)s)" % self.__dict__
+        return ''.join(["Record(",
+                        "CHROM=%(CHROM)s, ",
+                        "POS=%(POS)s, ",
+                        "ID=%(ID)s, ",
+                        "REF=%(REF)s, ",
+                        "ALT=%(ALT)s), "
+                        "QUAL=%(QUAL)s), "
+                        "FILTER=%(FILTER)s), "
+                        "INFO=%(INFO)s), "
+                        "FORMAT=%(FORMAT)s)"
+                        ]) % self.__dict__
+                        
+#    CHROM, POS, ID, REF, ALT, QUAL, FILTER, INFO, FORMAT
     def add_format(self, fmt):
         self.FORMAT = self.FORMAT + ':' + fmt
 
