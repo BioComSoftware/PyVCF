@@ -454,6 +454,10 @@ class Reader(object):
         return samp_fmt
 
     def _parse_samples(self, samples, samp_fmt, site):
+        print("-----------------------------")#333
+        print("samples =", samples) #3333
+        print("samp_fmt =", samp_fmt)#3333
+        print("site =", site) #333
         '''Parse a sample entry according to the format specified in the FORMAT
         column.
 
@@ -466,6 +470,7 @@ class Reader(object):
             self._format_cache[samp_fmt] = self._parse_sample_format(samp_fmt)
         samp_fmt = self._format_cache[samp_fmt]
 
+        print("cparse=", cparse)#333
         if cparse:
             return cparse.parse_samples(
                 self.samples, samples, samp_fmt, samp_fmt._types, samp_fmt._nums, site)
@@ -474,13 +479,16 @@ class Reader(object):
         _map = self._map
 
         nfields = len(samp_fmt._fields)
-
+        
+        print("self.samples", self.samples) #3333
+        print("samples =", samples)#3333
         for name, sample in zip(self.samples, samples):
-
+            print("Zipped: ", name, sample) #333
             # parse the data for this sample
             sampdat = [None] * nfields
 
             for i, vals in enumerate(sample.split(':')):
+                print("sample split = ", i, ":", vals)#333
 
                 # short circuit the most common
                 if samp_fmt._fields[i] == 'GT':
@@ -633,7 +641,6 @@ class Reader(object):
         # Genotype fields can be followed by other data columns, 
         # so we have to detect that
         if rowdict["FORMAT"] is not None:
-            items = list(rowdict.items())
             # We run this code here, because we have to wait for the first line 
             # of actual data. 
             # It will use the number of colons found in the FORMAT field, to 
@@ -654,12 +661,14 @@ class Reader(object):
                 self._sample_indexes = dict([(x,i) for (i,x) in enumerate(self.samples)])
             record = _Record(rowdict, self._sample_indexes)
                      
-            # We will assume that the next string that follows the FORMAT 
-            # declaration is the sample data. HOWEVER, a FORMAT can have 
-            # multiple sample lines (I.e. TUMOR and CONTROL.) This will only set 
-            # the first sample data. The class "_Record" needs to be 
-            # modified in order to handle multiple sets of sample data
-            samples = self._parse_samples(items[9][1], rowdict["FORMAT"], record)
+            # Generate an "items" list (of sample data) based on the columns
+            # identified to be containing sample data. This is passed to 
+            # _parse_samples
+            items = []
+            for col in self.samples:
+                items.append(rowdict[col])
+                
+            samples = self._parse_samples(items, rowdict["FORMAT"], record)
             record.samples = samples
 
         return record
