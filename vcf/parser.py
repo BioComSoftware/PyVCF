@@ -353,9 +353,13 @@ class Reader(object):
 
         fields = self._row_pattern.split(line[1:])
 #        self._column_headers = fields[:9]
-        self._column_headers = fields                    
-        self.samples = fields[9:]
-        self._sample_indexes = dict([(x,i) for (i,x) in enumerate(self.samples)])
+        self._column_headers = fields
+        self._non_standard_column_headers = (
+            set(self._column_headers) - 
+            set(["CHROM", "POS", "ID", "REF", "ALT","QUAL", "FILTER", 
+                 "INFO", "FORMAT"]))
+#         self.samples = fields[9:] #removed in favor of running in __next__
+#         self._sample_indexes = dict([(x,i) for (i,x) in enumerate(self.samples)])
 
     def _map(self, func, iterable, bad=['.', '']):
         '''``map``, but make bad values None.'''
@@ -625,20 +629,36 @@ class Reader(object):
         # record = _Record(chrom, pos, ID, ref, alt, qual, filt,
         #                  info, fmt, self._sample_indexes)
         #=======================================================================
-
-        record = _Record(rowdict, self._sample_indexes)
             
         # Genotype fields can be followed by other data columns, 
         # so we have to detect that
         if rowdict["FORMAT"] is not None:
             items = list(rowdict.items())
-            #===================================================================
+            # We run this code here, because we have to wait for the first line 
+            # of actual data. 
+            # It will use the number of colons found in the FORMAT field, to 
+            # create a regex pattern. It will match that regex pattern against 
+            # the data in the remaining non-standard colums and, if they appear 
+            # to actually be sample data, adds them to self.samples
+            # self.samples remains set to None in init. 
+            if self.samples is None: 
+                self.samples = []
+                self._num_format_colons = rowdict["FORMAT"].count(":")
+                self._samples_pattern = "^"
+                for i in range(0,self._num_format_colons+1, 1):
+                    self._samples_pattern += r"[0-9.,/-]{1,}:"
+                self._samples_pattern = self._samples_pattern.rstrip(":") + "$"
+                for header in self._column_headers:
+                        if re.match(self._samples_pattern, str(rowdict[header])):
+                            self.samples.append(header) 
+                self._sample_indexes = dict([(x,i) for (i,x) in enumerate(self.samples)])
+            record = _Record(rowdict, self._sample_indexes)
+                     
             # We will assume that the next string that follows the FORMAT 
             # declaration is the sample data. HOWEVER, a FORMAT can have 
             # multiple sample lines (I.e. TUMOR and CONTROL.) This will only set 
             # the first sample data. The class "_Record" needs to be 
             # modified in order to handle multiple sets of sample data
-            #===================================================================
             samples = self._parse_samples(items[9][1], rowdict["FORMAT"], record)
             record.samples = samples
 
